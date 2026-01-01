@@ -6,7 +6,6 @@ module;
 
 export module WindowManager;
 import std;
-
 namespace Rendering
 {
     /**
@@ -15,24 +14,29 @@ namespace Rendering
     export class WindowManager
     {
     public:
-        WindowManager()
+        WindowManager() :window(nullptr)
         {
             glfwInit();
             glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
-            window = glfwCreateWindow(1700, 900, "Kitsune Engine", nullptr, nullptr);
+            window = glfwCreateWindow(1, 1, "AngelBase", nullptr, nullptr);
         }
 
-        void ResizeWindow(uint32_t width, uint32_t height)
-        {
-            glfwSetWindowSize(window, width, height);
-        }
         ~WindowManager()
         {
             glfwDestroyWindow(window);
             glfwTerminate();
         }
+        
+        void ResizeWindow(uint32_t width, uint32_t height)
+        {
+            glfwSetWindowSize(window, width, height);
+        }
 
+        GLFWwindow* GetWindow() const
+        {
+            return window;
+        }
         
         vk::SurfaceKHR VulkanCreateWindowSurface(const vk::Instance& instance) const
         {
@@ -43,14 +47,14 @@ namespace Rendering
             return vk::SurfaceKHR(surface);
         }
 
-        VkExtent2D VulkanGetWindowDimensions() const
+        VkExtent3D VulkanGetWindowDimensions() const
         {
             int width = 0, height = 0;
             glfwGetWindowSize(window,&width, &height);
-            return VkExtent2D(width, height);
+            return VkExtent3D(width, height, 1);
         }
     private:
-        
         GLFWwindow* window;
+        
     };
 }

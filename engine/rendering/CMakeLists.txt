@@ -7,6 +7,7 @@ target_sources(AngelBase PRIVATE
     VulkanCommand.cpp
     VulkanDescriptors.cpp
     VulkanExtensions.cpp
+    VulkanRenderer.cpp
     VulkanSwapchain.cpp
 )
 

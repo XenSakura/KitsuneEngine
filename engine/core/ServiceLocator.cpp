@@ -1,4 +1,5 @@
 ﻿module;
+#include <cassert>
 
 export module ServiceLocator;
 import std;
@@ -7,7 +8,6 @@ export class ISystem
 {
 public:
     virtual ~ISystem() = default;
-    std::string name;    
 };
 
 //the only singleton-- all major engine systems should be registered here.
@@ -16,32 +16,91 @@ public:
 export class ServiceLocator
 {
 public:
-    ServiceLocator();
-    bool RegisterSystem(const std::shared_ptr<ISystem>& system )
+    ServiceLocator()
     {
-        if (!system) return false;
-        systems.push_back(system);
+        //TODO: Figure out the amount of systems we're going to have at max
+        systems.reserve(50);
+    }
+
+    template <typename SystemType>
+    bool RegisterSystem(std::shared_ptr<SystemType>& system)
+    {
+        auto [iter, inserted] = systems.insert({ typeid(SystemType), system });
+
+        if (!inserted)
+        {
+            std::string err = "System has already been registered!: " + std::string(typeid(SystemType).name());
+            std::cerr << err << std::endl;
+            assert(inserted);
+            return false;
+        }
         return true;
     }
     
-    template<class T>
-    std::shared_ptr<T> GetSystem()
+    template<class SystemType>
+    std::weak_ptr<SystemType> Get()
     {
-        static_assert(std::is_base_of_v<ISystem, T>, "T must derive from ISystem");
-        
-        for (auto& weakSystem : systems)
-        {
-            if (auto system = weakSystem.lock())  // Convert weak_ptr to shared_ptr
-            {
-                if (auto derived = std::dynamic_pointer_cast<T>(system))
-                {
-                    return derived;
-                }
-            }
-        }
-        return nullptr;  // System not found
+        return GetSystem<SystemType>();
     }
+
+    template<class SystemType>
+    void Unregister()
+    {
+        GetSystem<SystemType>(); // Validates the system exists and is alive
+        systems.erase(typeid(SystemType));
+    }
+
+    void Update()
+    {
+        // at the end of each frame check if we need to remove any systems.
+        
+        // While in debug mode, we want to make sure that developers
+        // are properly deregistering and managing the object lifetimes correctly
+        // in each system
+#ifndef _DEBUG
+        std::erase_if(systems,
+            [](const auto& pair)
+            {
+                return pair.second.expired();
+            });
+#endif
+
+    }
+
+    static ServiceLocator* Instance()
+    {
+        static ServiceLocator instance;
+        return &instance;
+    }
+
+    
 private:
-    //don't own the references, just keep track
-    std::vector<std::weak_ptr<ISystem>> systems;
+    std::unordered_map<std::type_index, std::weak_ptr<ISystem>> systems;
+
+    template<class SystemType>
+    std::weak_ptr<SystemType> GetSystem()
+    {
+        std::weak_ptr<ISystem> requested_system;
+        //ERROR: array out of bounds
+        try
+        {
+            requested_system = systems.at(typeid(SystemType));
+        }
+        catch (const std::exception& e)
+        {
+            std::string err = "System is not registered: " + std::string(typeid(SystemType).name());
+            std::cerr << err << std::endl;
+            std::cerr << e.what() << std::endl;
+            assert(false);
+        }
+        //ERROR: this system is expired, and not properly deregistered
+        if (bool expiry = requested_system.expired())
+        {
+            std::string err = "Get called on system that expired, but wasn't deregistered: " + std::string(typeid(SystemType).name());
+            std::cerr << err << std::endl;
+            assert(!expiry);
+        }
+        
+        return std::weak_ptr<SystemType>(std::static_pointer_cast<SystemType>(requested_system.lock()));
+    }
 };

@@ -4,12 +4,12 @@
 export module VulkanCommand;
 import std;
 import VulkanContext;
-
+import ServiceLocator;
 
 namespace Rendering::Vulkan
 {
     //TODO: I think we want the ability to record across multiple threads maybe?
-    export class CommandPoolManager
+    export class CommandPoolManager : public ISystem
     {
     public:
         CommandPoolManager(const Vulkan::Context& context)

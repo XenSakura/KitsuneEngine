@@ -4,6 +4,7 @@
 #define VMA_IMPLEMENTATION
 #include "vk_mem_alloc.h"
 #include "GLFW/glfw3.h"
+#include "glm/glm.hpp"
 export module VulkanContext;
 
 export namespace Rendering::Vulkan
@@ -34,4 +35,6 @@ export namespace Rendering::Vulkan
         vk::Extent3D extent;
         vk::Format format;
     };
+
+    
 }

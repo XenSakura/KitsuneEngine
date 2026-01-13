@@ -6,6 +6,8 @@
 #include "vk_mem_alloc.h"
 
 #define GLFW_INCLUDE_NONE
+#include "../../build/_deps/assimp-src/code/AssetLib/glTF/glTFImporter.h"
+#include "assimp/Vertex.h"
 #include "GLFW/glfw3.h"
 
 
@@ -18,6 +20,8 @@ import WindowManager;
 import VulkanSwapchain;
 import RenderTargetManager;
 import VulkanCommand;
+import VulkanDescriptors;
+import ServiceLocator;
 VULKAN_HPP_DEFAULT_DISPATCH_LOADER_DYNAMIC_STORAGE
 
 
@@ -52,13 +56,15 @@ namespace Rendering::Vulkan
 		DeleteStack m_destructor;
 		
 		// can hold multiple
-		std::unique_ptr<SwapchainManager> m_swapchain_manager;
+		std::shared_ptr<SwapchainManager> m_swapchain_manager;
 		// can hold multiple
-		std::unique_ptr<RenderTargetManager> m_render_target_manager;
+		std::shared_ptr<RenderTargetManager> m_render_target_manager;
 		//can hold multiple
-		std::unique_ptr<WindowManager> m_window_manager;
+		std::shared_ptr<WindowManager> m_window_manager;
 		// a la the same
-		std::unique_ptr<CommandPoolManager> m_command_pool_manager;
+		std::shared_ptr<CommandPoolManager> m_command_pool_manager;
+
+		std::shared_ptr<DescriptorManager> m_descriptor_manager;
 
 		uint32_t current_frame = 0;
 
@@ -72,7 +78,8 @@ namespace Rendering::Vulkan
 	public:
 		bool initialize(uint32_t width, uint32_t height)
 		{
-			m_window_manager = std::make_unique<WindowManager>();
+			m_window_manager = std::make_shared<WindowManager>();
+			ServiceLocator::Instance()->RegisterSystem<WindowManager>(m_window_manager);
 			m_window_manager->ResizeWindow(2560, 1440);
 			//1. Init instance
 			{
@@ -346,7 +353,8 @@ namespace Rendering::Vulkan
 
 			//5. initialize and create swapchain
 			{
-				m_swapchain_manager = std::make_unique<SwapchainManager>(m_context);
+				m_swapchain_manager = std::make_shared<SwapchainManager>(m_context);
+				ServiceLocator::Instance()->RegisterSystem(m_swapchain_manager);
 				m_swapchain_manager.get()->createSwapchain(width, height);
 			}
 
@@ -375,7 +383,8 @@ namespace Rendering::Vulkan
 
 			//7. Create draw and depth image targets
 			{
-				m_render_target_manager = std::make_unique<RenderTargetManager>(m_context);
+				m_render_target_manager = std::make_shared<RenderTargetManager>(m_context);
+				ServiceLocator::Instance()->RegisterSystem<RenderTargetManager>(m_render_target_manager);
 				VkExtent3D extent = m_window_manager.get()->VulkanGetWindowDimensions();
 				m_render_target_manager->createDrawColorTarget(extent);
 				m_render_target_manager->createDepthTarget(extent);
@@ -383,7 +392,8 @@ namespace Rendering::Vulkan
 			}
 			//8. Create Command Pools and Command Queues
 			{
-				m_command_pool_manager = std::make_unique<CommandPoolManager>(m_context);
+				m_command_pool_manager = std::make_shared<CommandPoolManager>(m_context);
+				ServiceLocator::Instance()->RegisterSystem<CommandPoolManager>(m_command_pool_manager);
 				m_command_pool_manager.get()->BuildCommandPools();
 			}
 
@@ -404,13 +414,143 @@ namespace Rendering::Vulkan
 
 			//10. Build Descriptor pools and sets
 			{
-
+				m_descriptor_manager = std::make_shared<DescriptorManager>(m_context);
+				ServiceLocator::Instance()->RegisterSystem<DescriptorManager>(m_descriptor_manager);
+				m_descriptor_manager.get()->createDescriptorPool();
+				m_descriptor_manager.get()->createDescriptorSetLayout();
+				m_descriptor_manager.get()->createDescriptorSet();
 				
 			}
 
 			//11. Build the pipelines
 			{
+				vk::PushConstantRange push_constant_range =
+				{
+					.stageFlags = vk::ShaderStageFlagBits::eVertex,
+					.size = static_cast<uint32_t>(sizeof(vk::DeviceAddress))
+				};
+
+				vk::PipelineLayoutCreateInfo pipeline_layout_info =
+				{
+					.setLayoutCount = 1,
+					// Put descriptor set layout here
+					.pSetLayouts = 0,
+					.pushConstantRangeCount = 1,
+					.pPushConstantRanges = &push_constant_range
+				};
+
+				vk::PipelineLayout pipeline = m_context.device.createPipelineLayout(pipeline_layout_info);
+
+				vk::VertexInputBindingDescription vertex_binding =
+				{
+					.binding = static_cast<uint32_t>(sizeof(0)),
+					.stride = static_cast<uint32_t>(sizeof(Assimp::Vertex)),
+					.inputRate = vk::VertexInputRate::eVertex
+				};
+
+				std::vector<vk::VertexInputAttributeDescription> vertex_attributes =
+				{
+					{.location = (uint32_t)0, .binding = (uint32_t)0, .format = vk::Format::eR32G32B32Sfloat},
+					{.location = (uint32_t)1, .binding = (uint32_t)0, .format = vk::Format::eR32G32B32Sfloat, .offset = (uint32_t)4},
+					{.location = (uint32_t)0, .binding = (uint32_t)0, .format = vk::Format::eR32G32Sfloat, .offset = (uint32_t)6}
+				};
+
+				vk::PipelineVertexInputStateCreateInfo vertex_input_state =
+				{
+					.vertexBindingDescriptionCount = 1,
+					.pVertexBindingDescriptions = &vertex_binding,
+					.vertexAttributeDescriptionCount = static_cast<uint32_t>(vertex_attributes.size()),
+					.pVertexAttributeDescriptions = vertex_attributes.data()
+				};
+
+
+				vk::PipelineInputAssemblyStateCreateInfo input_assembly_state = {.topology = vk::PrimitiveTopology::eTriangleList};
+				std::vector<vk::PipelineShaderStageCreateInfo> shader_stages = {};
+
+				vk::PipelineShaderStageCreateInfo pipeline_shader_stage =
+				{ .stage = vk::ShaderStageFlagBits::eVertex,
+					.module = vk::ShaderModule(),
+					//entry function of each shader
+					.name = "main"
+				};
+
+				vk::PipelineShaderStageCreateInfo pipeline_fragment_shader_stage =
+				{
+					.stage = vk::ShaderStageFlagBits::eFragment,
+					.module = vk::ShaderModule(),
+					.name = "main"
+				};
+
+				vk::PipelineViewportStateCreateInfo viewport_state =
+				{
+					.viewportCount = 1,
+					.scissorCount = 1
+				};
+
+				std::vector<vk::DynamicState> dynamic_states =
+				{
+					vk::DynamicState::eViewport,
+					vk::DynamicState::eScissor
+				};
+
+				vk::PipelineDynamicStateCreateInfo dynamic_state =
+				{
+					.dynamicStateCount = 2,
+					.pDynamicStates = dynamic_states.data()
+				};
+
+				vk::PipelineDepthStencilStateCreateInfo depth_stencil_state =
+				{
+					.depthTestEnable = VK_TRUE,
+					.depthWriteEnable = VK_TRUE,
+					.depthCompareOp = vk::CompareOp::eLessOrEqual
+				};
+
+				auto manager = m_render_target_manager.get();
 				
+				vk::PipelineRenderingCreateInfo rendering_create_info =
+				{
+					.colorAttachmentCount = 1,
+					.pColorAttachmentFormats = &manager->getColorRenderTarget().format,
+					.depthAttachmentFormat = manager->getDepthRenderTarget().format
+				};
+
+				vk::PipelineColorBlendAttachmentState blend_attachment_state =
+				{
+					.colorWriteMask = static_cast<vk::Bool32>(0xF),
+				};
+
+				vk::PipelineColorBlendStateCreateInfo color_blend_state =
+				{
+					.attachmentCount = 1,
+					.pattachments = &blend_attachment_state
+				};
+
+				vk::PipelineRasterizationStateCreateInfo rasterization_state =
+				{
+					.lineWidth = 1.0f
+				};
+
+				vk::PipelineMultisampleStateCreateInfo ms_state =
+				{
+					.rasterizationSamples = vk::SampleCountFlagBits::e1,
+				};
+
+				vk::GraphicsPipelineCreateInfo pipeline_create_info =
+				{
+					.pNext = &rendering_create_info,
+					.stageCount = 2,
+					.pStages = shader_stages.data(),
+					.pVertexInputState = &vertex_input_state,
+					.pInputAssemblyState = &input_assembly_state,
+					.pViewportState = &viewport_state,
+					.pRasterizationState = &rasterization_state,
+					.pMultisampleState = &ms_state,
+					.pDepthStencilState = &depth_stencil_state,
+					.pColorBlendState = &color_blend_state,
+					.pDynamicState = &dynamic_state,
+					.layout = pipeline_layout_info
+				};
 			}
 #ifdef _DEBUG
 			//12. initialize imgui
@@ -440,18 +580,24 @@ namespace Rendering::Vulkan
 				m_context.device.destroyFence(frame_resources[i].fence);
 			}
 
+			m_descriptor_manager.reset();
+			ServiceLocator::Instance()->Unregister<DescriptorManager>();
+			
 			//destroy command pools
 			m_command_pool_manager.reset();
+			ServiceLocator::Instance()->Unregister<CommandPoolManager>();
 			
 			// Destroy rendertargets
 			m_render_target_manager.reset();
+			ServiceLocator::Instance()->Unregister<RenderTargetManager>();
 			
 			//execute deletion
 			m_destructor.clear();
 
 			//destroy swapchain and free swapchain manager
 			m_swapchain_manager.reset();
-
+			ServiceLocator::Instance()->Unregister<SwapchainManager>();
+			
 			m_context.instance.destroySurfaceKHR(m_context.surface);
 
 			m_context.device.destroy();
@@ -461,6 +607,7 @@ namespace Rendering::Vulkan
 			m_context.instance.destroy();
 
 			m_window_manager.reset();
+			ServiceLocator::Instance()->Unregister<WindowManager>();
 		}
 	}; 
 }

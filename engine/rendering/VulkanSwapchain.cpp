@@ -2,7 +2,7 @@
 #include <vulkan/vulkan.hpp>
 
 export module VulkanSwapchain;
-
+import ServiceLocator;
 import VulkanContext;
 
 namespace Rendering::Vulkan
@@ -17,7 +17,7 @@ namespace Rendering::Vulkan
         std::vector<vk::Image> images;
     };
 
-	export class SwapchainManager
+	export class SwapchainManager : public ISystem
 	{
 	private:
 		const Vulkan::Context& vulkan_context;

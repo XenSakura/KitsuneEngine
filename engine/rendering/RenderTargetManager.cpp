@@ -6,14 +6,14 @@
 export module RenderTargetManager;
 
 import VulkanContext;
-
+import ServiceLocator;
 namespace Rendering::Vulkan
 {
     
 
     export typedef Rendering::Vulkan::Image RenderTarget;
     
-    export class RenderTargetManager
+    export class RenderTargetManager : public ISystem
     {
     private:
         const Vulkan::Context& context;

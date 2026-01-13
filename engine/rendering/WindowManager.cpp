@@ -6,12 +6,13 @@ module;
 
 export module WindowManager;
 import std;
+import ServiceLocator;
 namespace Rendering
 {
     /**
      * Window Manager class for handling multiple GLFW windows
      */
-    export class WindowManager
+    export class WindowManager : public ISystem
     {
     public:
         WindowManager() :window(nullptr)

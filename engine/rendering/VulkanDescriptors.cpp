@@ -39,6 +39,11 @@ namespace Rendering::Vulkan
             return m_set;
         }
 
+        vk::DescriptorSet& getDescriptorSet()
+        {
+            return m_set;    
+        }
+        
         ~DescriptorManager()
         {
             
